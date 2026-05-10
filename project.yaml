@@ -1,0 +1,37 @@
+id: vafi
+name: vafi (ViloForge Agentic Fleet Infrastructure)
+description: |
+  Autonomous AI agent fleet — controller loop, work source abstraction,
+  claim/judge mechanics, multi-harness support. The agent pods that
+  claim tasks from the task execution engine and produce code in the
+  linked code repos.
+created_at: 2026-05-10T00:00:00Z
+status: active
+
+# Code repos this project drives work in. Multiple supported. After the
+# Phase 0 repo transfers complete, all platform repos live under the
+# `viloforge` GitHub org.
+repos:
+  - id: source
+    kind: source
+    provider: github
+    url: https://github.com/viloforge/vafi
+    default_branch: main
+    description: vafi monorepo (controller, agent images, bridge)
+  - id: deploy
+    kind: deploy
+    provider: github
+    url: https://github.com/viloforge/viloforge-platform
+    default_branch: main
+    description: argo-managed deploys live here
+
+# Methodology pin — the version of the global methodologies repo this
+# project's agents resolve against. Per-role overrides go in
+# methodologies/.
+methodologies_pin: vtf-methodologies@v0.0
+
+# Free-form classification.
+tags:
+  - infrastructure
+  - agent-fleet
+  - phase-1-bootstrap
