@@ -11,20 +11,72 @@ domain.
 
 ## Current focus
 
-Bootstrapping. The new ViloForge software factory architecture is
-being built; this is the first project workspace provisioned. The
-first workgraph slated for the new system is `vafi-rolling-restart-fix`
-(addresses [vafi#4](https://github.com/viloforge/vafi/issues/4) — the
-production-readiness blocker for the agent fleet).
+**Phase 0 complete (2026-05-10). Phase 1 next: architect session for
+vafi#4.**
 
-Phase 1 of the implementation roadmap (per
-[`viloforge/viloforge-platform/docs/implementation-roadmap-PLAN.md`](https://github.com/viloforge/viloforge-platform/blob/main/docs/implementation-roadmap-PLAN.md))
-runs vafi#4 manually through the SDD pipeline: operator + Claude
-collaborate on triage, architecture, spec authoring, verification,
-and execution. The artifacts produced (workgraph.md, plan.md,
-per-task specs, completion.md) populate this repo and inform the
-first methodology drafts in
-[`vtf-methodologies`](https://github.com/viloforge/vtf-methodologies).
+### Where we are
+
+Phase 0 of the implementation roadmap finished today. Specifically:
+
+- All platform repos transferred from operator's personal account
+  (`vilosource/`) to the `viloforge` GitHub org. `viloforge/vafi`,
+  `viloforge/viloforge-platform`, `viloforge/vtaskforge` all live
+  there now. Auto-redirect handles old URLs.
+- `viloforge-projects/` org created; **this repo** scaffolded.
+- `viloforge/vtf-methodologies@v0.0` created as empty stub.
+- Cluster reconfigured: ArgoCD apps, Argo Events sensors, ESO
+  ExternalSecrets all updated to reference `viloforge/*` URLs and
+  the new GitHub App installation (id `125572832`).
+- Smoke test passed: trivial commit to `viloforge/vafi:main` →
+  webhook → sensor → workflow → image build → all green.
+
+PR #1 in `viloforge/viloforge-platform` was the YAML reconfiguration;
+it's merged.
+
+### What's next
+
+**Phase 1 — Manual SDD validation on vafi#4.**
+
+Open an architect session (operator + Claude). Goal: produce
+`workgraphs/vafi-rolling-restart-fix/workgraph.md` and `plan.md`
+through collaborative design. Then spec-author per task; verify;
+implement (operator + Claude as executor); judge against acceptance
+criteria; retrospector writes `completion.md`. Extract first-draft
+methodology files into `vtf-methodologies` from the experience.
+
+The workgraph addresses
+[vafi#4](https://github.com/viloforge/vafi/issues/4) — the
+rolling-restart claim orphaning bug — production-readiness blocker
+for the vafi worker fleet. Real outcome (a fix) plus
+methodology validation.
+
+### Cluster state to be aware of
+
+- All Phase 0-relevant ArgoCD apps are Synced + Healthy
+  (`vafi-dev`, `vtf-dev`, `platform-bootstrap`, etc.).
+- Pre-existing peripheral apps in non-Synced states:
+  - `harbor` — OutOfSync + Degraded (was Degraded before transfer;
+    not Phase 0 regression)
+  - `vafi-dev-secrets` — OutOfSync + Healthy
+  - `vtf-dev-secrets` — Unknown + Healthy
+- These don't block Phase 1 (workloads run fine); reconcile in a
+  separate operator session when convenient.
+
+### How to resume in a future session
+
+1. Read `viloforge/viloforge-platform/docs/INDEX.md` (entry point
+   to the design set; pick the "I'm planning the build-out" reading
+   path).
+2. Read this section ("Current focus") to know exactly where we
+   stopped.
+3. Begin the architect session for vafi#4 — operator + Claude
+   discussing the design. The artifact of the session is
+   `workgraphs/vafi-rolling-restart-fix/workgraph.md` committed to
+   this repo.
+
+### Reference
+
+Full Phase 1 procedure: `viloforge/viloforge-platform/docs/implementation-roadmap-PLAN.md` §"Phase 1 — Manual SDD validation".
 
 ## How to work in this project
 
