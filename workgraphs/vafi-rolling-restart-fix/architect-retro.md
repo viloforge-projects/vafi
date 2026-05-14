@@ -567,38 +567,58 @@ redirect or request deeper investigation (P6). For the
 autonomous agent variant, this is the natural place to insert
 a "pause for review" gate in supervised modes.
 
-### X5. Per-stage retros should accumulate before vtf-methodologies synthesis
+### X5. Stage-retros are methodology-extraction scaffolding, not standing SDD artifacts
 
 **Observed in this session.** This document is a stage-retro
-(architect-phase only). The eventual `completion.md` will be
-the workgraph-retro (post-execution). Both feed the
-methodology-extraction step (`implementation-roadmap-PLAN.md`
-Phase 1 step 8). Folding all learning into one big
-`completion.md` would lose architect-phase-specific signal
-under execution noise.
+(architect-phase only). It exists because we are in Phase 1 of
+the implementation roadmap — explicitly tasked with extracting
+first-draft methodology files into `vtf-methodologies`. The
+canonical SDD retro artifact, per `project-repo-DESIGN.md`, is
+workgraph-level `completion.md`. Stage-retros are not part of the
+standing SDD pipeline.
 
-**Cross-cutting form.** Each interesting stage produces its own
-retro at stage-end:
+**Corrected framing (operator-flagged 2026-05-14).** During
+**methodology-extraction phases** (Phase 1; then later when a new
+`kind:` variant — feature, refactor, infrastructure, research,
+trivial — gets its first workgraph and needs methodology drafted),
+we retain per-stage retros as scaffolding. They serve methodology
+extraction. Once the methodology file for that (role × kind)
+pair stabilizes, future workgraphs of that kind stop producing
+per-stage retros — the durable learning lives in the methodology
+file, not in retro accumulation.
 
-- `triage-retro.md` — what the triage agent learned (skip if
-  triage was a one-line operator decision).
+**Where they live during Phase 1 (and equivalent later pockets).**
+Inside the workgraph directory, alongside `workgraph.md` /
+`plan.md` / `completion.md`:
+
 - `architect-retro.md` — this document.
-- `spec-author-retro.md` — per spec-authoring round (probably
-  one per task or one per batch).
-- `verifier-retro.md` — what the verifier caught and what it
-  almost missed.
-- `judge-retro.md` — per execution submission, what graded
-  cleanly vs ambiguously.
-- `completion.md` — workgraph-level retro synthesizing the
-  above.
+- `spec-author-retro.md` — written at end of spec-author stage
+  during methodology-extraction phases only.
+- `verifier-retro.md`, `judge-retro.md` — same pattern.
+- `triage-retro.md` — only if triage produced learning worth
+  capturing (one-line operator decisions skip).
 
-**vtf-methodologies synthesis** then takes N stage-retros across
-M workgraphs as input. The signal-to-noise ratio is much higher
-than synthesizing from N completion docs alone.
+Co-location (vs a separate scratch area) was chosen so each retro
+sits next to the artifact it comments on; this makes methodology
+extraction easier ("re-read the architect-retro alongside the
+workgraph.md it was about"). Trade-off accepted: future readers
+might assume retros are canonical SDD; the retro frontmatter
+should make the experimentation status explicit (a `stage:` and
+`phase: methodology-extraction` marker would help — worth
+considering for the spec-author-retro template).
 
-**Edge case.** Trivial stages should skip the retro. The rule
-is: if anything non-routine happened — a surprise, a redirect,
-a methodology question raised — write the retro.
+**Post-extraction life.** Once `vtf-methodologies/<role>/<kind>.md`
+files exist and are good enough to drive the autonomous agents,
+the stage-retros become **historical archaeology** — useful for
+"why is the methodology this shape?" questions, but not consumed
+by the standing pipeline. They can be left in place as a record
+or archived as a batch; not deleted under sentimental value.
+
+**Why this correction matters.** Framing per-stage retros as
+"standing SDD" overreaches. SDD's contract with future workgraphs
+is `completion.md` plus the methodology files. Stage-retros are
+the dev-loop for methodology, and dev-loop artifacts shouldn't
+masquerade as production schema.
 
 ## Open questions for the next workgraph
 
