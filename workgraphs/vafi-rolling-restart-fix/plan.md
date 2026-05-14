@@ -9,7 +9,41 @@ last_revision: 2026-05-14T00:00:00Z
 # Approach
 
 Two independent client-side changes in the vafi controller, validated
-together by an induced-rolling-restart integration test.
+together by an induced-rolling-restart integration test. Plus a
+preceding SDK-method addition in vtf-sdk-python that unblocks the
+two vafi-side fixes.
+
+> **Cross-repo walk-back (added during spec-author phase).** The
+> architect-phase plan declared this workgraph "single-repo"
+> (`viloforge/vafi` only). Spec-author phase verification of the
+> async SDK surface found that `AsyncTaskManager.unclaim`,
+> `AgentManager.tasks`, and `AsyncAgentManager.tasks` do not exist
+> in `vtf-sdk-python`'s async-client module — only the sync side
+> has `unclaim`, and neither side has `agents.tasks`. The endpoints
+> they wrap *do* exist in vtaskforge. So the work to do is "expose
+> the existing endpoints in the async SDK," which is a small
+> vtaskforge-repo change. **T0 was added to the DAG to make this
+> work first-class** rather than hide it inside a vafi-side spec
+> body. The architect-retro P12 documents the methodology gap that
+> caused this missed dependency, and the cross-repo walk-back
+> footnote there records it as Phase 1 methodology data: "single-
+> repo" turned out to mean "single-server-side-repo, plus
+> SDK-companion-repo alignment."
+
+**T0 — Add missing async SDK methods.** Three short methods in
+`vtaskforge/vtf-sdk-python/vtf_sdk/`:
+
+1. `AsyncTaskManager.unclaim(id) -> Task` in `async_client.py`,
+   mirroring the existing sync `TaskManager.unclaim` in `managers.py:86`.
+2. `AgentManager.tasks(agent_id, *, status=None) -> PagedResult[Task]`
+   in `managers.py`, mirroring `GET /v2/agents/<id>/tasks/`.
+3. `AsyncAgentManager.tasks(agent_id, *, status=None) -> PagedResult[Task]`
+   in `async_client.py` — the async version of #2.
+
+Plus tests in `tests/test_managers_*.py` and `tests/test_async_client.py`
+following existing patterns. Merged via PR to the `vtaskforge` repo;
+vafi's `pyproject.toml` then re-pins `vtf-sdk-python` to the new
+merge commit. T1 and T2 cannot land until this is in.
 
 **T1 — SIGTERM graceful release.** Extend the existing signal
 handler in `controller/controller.py:_setup_signal_handlers` (which
@@ -76,12 +110,16 @@ during this architect session found `unclaim` already exists with
 exactly the right semantics. Runtime DESIGN updated accordingly.)
 
 **Alt B — Add a new `POST /v2/tasks/<id>/release/` endpoint with a
-`reason` field.** Rejected for Phase 1. Would force a multi-repo
-workgraph (violates the Phase 1 single-repo constraint stated in
-`implementation-roadmap-PLAN.md` §"Phase 1"). Server-side
-distinction between SIGTERM-release and startup-recon is currently
-a nice-to-have only — pod logs differentiate them. Tracked as a
-future refinement note in `vafi-runtime-DESIGN.md`.
+`reason` field.** Rejected. Adding a new server-side endpoint
+(vtaskforge models/views) is structurally different from adding an
+SDK method that wraps an already-existing endpoint (the T0
+walk-back). Even with the walk-back, the workgraph stays
+single-server-side: no new endpoint, no new model, no new view —
+only SDK alignment with an existing endpoint. Adding `/release/`
+would cross that line. Server-side distinction between
+SIGTERM-release and startup-recon is currently a nice-to-have only
+— pod logs differentiate them. Tracked as a future refinement note
+in `vafi-runtime-DESIGN.md`.
 
 **Alt C — Split each impl task into `design-X` + `impl-X` siblings**
 (matching the worked example in `project-repo-DESIGN.md`). Rejected.
@@ -110,20 +148,23 @@ defensible Phase 1 deliverable.
 
 # Open questions resolved during planning
 
-- **Q: Which release endpoint?** A: `POST /v2/tasks/<id>/unclaim/`
-  (SDK: `client.tasks.unclaim`). State-machine-respecting,
-  agent-grade, emits a dedicated `unclaimed` event. Verified to
-  exist at `vtaskforge/src/tasks/views.py:269`. The handoff's
+- **Q: Which release endpoint?** A: `POST /v2/tasks/<id>/unclaim/`.
+  State-machine-respecting, agent-grade, emits a dedicated
+  `unclaimed` event. Verified to exist at
+  `vtaskforge/src/tasks/views.py:269`. The handoff's
   `tasks.reset(...)` and the runtime DESIGN's `/release` were both
   worse choices than what already exists.
+  *Spec-author addendum:* the sync `client.tasks.unclaim` exists in
+  the SDK but the async client doesn't have it — added in T0.
 - **Q: Which "list my active claims" endpoint?** A:
-  `GET /v2/agents/<id>/tasks/?status=doing` (SDK: `client.agents.tasks`).
-  Verified at `vtaskforge/src/agents/views.py:85`. Note that this
-  filters by `claimed_by=agent.user` (user-level), not by agent
-  ID. Safe under the deployment shape vafi#4 cares about
-  (max-1-active-replica-per-agent-ID rolling restart). Documented
-  in workgraph.md "Out of scope" and as a constraint in the runtime
-  DESIGN.
+  `GET /v2/agents/<id>/tasks/?status=doing`. Verified at
+  `vtaskforge/src/agents/views.py:85`. Note that this filters by
+  `claimed_by=agent.user` (user-level), not by agent ID. Safe under
+  the deployment shape vafi#4 cares about (max-1-active-replica-per-
+  agent-ID rolling restart). Documented in workgraph.md "Out of
+  scope" and as a constraint in the runtime DESIGN.
+  *Spec-author addendum:* neither sync nor async SDK exposed this
+  endpoint via an `agents.tasks(...)` method — both added in T0.
 - **Q: Split design and impl per the worked example?** A: No, flat
   3-task DAG. See Alt C above.
 - **Q: `kind: bugfix` or `kind: feature`?** A: `bugfix`. The roadmap

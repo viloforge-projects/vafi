@@ -130,6 +130,50 @@ able to back-trace any extracted pattern to a concrete moment here.
   noted in `obs_jsWWsQ.md` frontmatter.
 - **O10.** Two commits pushed.
 
+## Walk-backs (post-session corrections)
+
+Findings surfaced after the architect session formally closed that
+required updating this retro and/or the workgraph artifacts. Captured
+explicitly so the methodology-extraction step can see *which patterns
+emerged from real walk-backs* vs *patterns that were obvious during
+the session*.
+
+- **W1 — Test environment was architect-level, not spec-author** (date:
+  2026-05-14, post-session). Surfaced when operator asked
+  "which of these decisions are spec-author?" and I had listed T3.1
+  (vafi-dev cluster vs kind/k3d) as spec-author. The decision changes
+  what passing the test *proves*, which is the architect's evidential-
+  character concern, not spec-author's how-to-build-the-test concern.
+  Resolved: locked to ephemeral kind/k3d in CI; workgraph.md AC-4 +
+  plan.md + task 03 updated. Methodology finding: **P11**.
+
+- **W2 — Async SDK surface gap missed during architect investigation**
+  (date: 2026-05-14, post-session, during spec-author T2 prep). The
+  architect-phase "investigation pass" (P6) verified that
+  `unclaim` and `agents/<id>/tasks/` *endpoints* exist in vtaskforge
+  but did NOT verify that the async SDK exposes them. Reality:
+  `AsyncTaskManager.unclaim` and both sync/async `AgentManager.tasks`
+  do not exist; only sync `TaskManager.unclaim` exists. This
+  invalidated the workgraph's "Phase 1 single-repo" framing and
+  forced adding **T0** (`00-add-sdk-methods.md`) — a vtaskforge-repo
+  task — to the DAG. Methodology finding: **P12**. Walk-back impact:
+  workgraph.md `target_repos` expanded to `[vtaskforge, viloforge/vafi]`;
+  plan.md gained a cross-repo walk-back section; AC-5 reframed from
+  "no vtaskforge changes" to "no vtaskforge **server-side** changes."
+
+- **W3 — Stage-retros are extraction scaffolding, not standing SDD**
+  (date: 2026-05-14, post-session). Operator-flagged correction
+  to X5. The retro originally framed per-stage retros as a permanent
+  SDD pipeline artifact alongside `completion.md`; the corrected
+  framing is that they exist only during methodology-extraction
+  phases. See X5 body below.
+
+The walk-backs *are* the methodology data Phase 1 was designed to
+produce. The architect session closing with W1-W3 still latent means
+the architect-phase methodology has gaps the autonomous agent will
+need to close (P11, P12 specifically address those gaps; W3 was a
+framing error of mine that the operator corrected).
+
 ## Architect-specific methodology candidates
 
 Provisional patterns to roll into `vtf-methodologies/architect/bugfix.md`
@@ -204,6 +248,12 @@ benefits from split and the bugfix didn't, the rule holds.
 ### P3. Endpoint/API choices must be verified against code, not against doc-level names
 
 **Maturity:** HIGH
+
+> **Amended after W2 (see Walk-backs).** P3 as originally written
+> was too narrow — it caught doc-vs-server-endpoint drift but not
+> server-vs-SDK drift. The full version is in P12. P3 stays as the
+> umbrella discipline ("verify against code"); P12 is the
+> concrete refinement covering the full call chain.
 
 **Observed.** The handoff said use `tasks.reset(...)`. The runtime
 DESIGN said use `POST /v2/tasks/<id>/release/`. Neither was right —
@@ -383,6 +433,87 @@ empty.
 **For methodology synthesis.** These three subsections become
 the primary input for `vtf-methodologies/architect/<kind>.md`
 synthesis across N workgraphs.
+
+### P12. Verify the FULL call chain from agent code to server, not just the server endpoint
+
+**Maturity:** HIGH — directly caused the W2 walk-back; methodology
+gap was unambiguous.
+
+**Observed.** Architect-phase investigation under P6 ("Deeper-
+investigation pass") and P3 ("Endpoint/API choices must be verified
+against code") verified that `POST /v2/tasks/<id>/unclaim/` and
+`GET /v2/agents/<id>/tasks/` existed in vtaskforge's server-side
+views. Both findings were correctly logged in workgraph.md and
+plan.md. **What was NOT verified: whether the SDK the agent
+actually calls (`vtf-sdk-python`, async client) exposed these
+endpoints.** Reality: `AsyncTaskManager.unclaim` does not exist
+(only the sync `TaskManager.unclaim`); neither sync nor async
+`AgentManager` has a `tasks(...)` method. The agent's actual call
+chain has a gap at the SDK layer that the architect didn't see.
+
+The gap surfaced during spec-author T2 prep when I needed to
+specify the exact SDK call vafi would make and discovered it
+didn't exist. That triggered the walk-back: workgraph topology
+gained T0 (a vtaskforge-targeted task), `target_repos` expanded,
+the "Phase 1 single-repo" framing was rewritten as "single-server-
+side-repo plus SDK-companion alignment," and AC-5 was reworded.
+
+**Candidate rule.** Before locking the workgraph topology or
+declaring scope constraints satisfied, the architect verifies the
+**entire call chain** the agent will traverse:
+
+1. Server-side endpoint exists at the URL and HTTP verb claimed.
+2. The SDK / client library / wire wrapper the agent uses
+   *exposes* that endpoint via a method the agent can actually
+   call.
+3. For each repo-boundary that wrapper crosses (pip pin, vendored
+   submodule, gRPC stub, generated client), confirm the version
+   the agent is pinned to includes the method.
+
+If step 2 or step 3 fails, the architect either:
+
+- Adds an explicit task to the DAG that closes the gap (`T0` here),
+  with appropriate `target_repo` and `depends_on` wiring; OR
+- Reframes the workgraph's scope (e.g., target a different
+  endpoint that's fully available); OR
+- Declares the gap as an out-of-scope precondition the operator
+  must close before the workgraph can be `ready`.
+
+What the architect MUST NOT do: silently assume the SDK will
+expose the endpoint because the endpoint exists. That assumption
+pushes discovery into spec-author phase (where this finding
+surfaced) or executor phase (worse — the executor would have hit
+an AttributeError mid-implementation).
+
+**Edge cases.**
+
+- **Pure HTTP-direct callers** (no SDK abstraction) skip steps 2-3.
+- **Multi-language SDKs** (e.g., a service called from both Python
+  and Go) — verify the language the executor will use, not just
+  the most-popular one.
+- **Sync/async splits** (the specific failure mode here) — verify
+  the variant the agent uses, not just the more-prominent one.
+
+**How to validate further.** In subsequent workgraphs:
+
+1. Log every "SDK surface verified" finding the architect makes at
+   investigation time, separately from "endpoint exists" findings.
+   If most workgraphs find them aligned, this rule is easy. If
+   most workgraphs find SDK gaps the architect missed, the
+   investigation tooling needs to be stronger (P6 needs richer
+   tooling — see Q3).
+
+2. The autonomous architect agent's investigation tooling must
+   include SDK-surface introspection, not just code grep. Suggested
+   tool surface (rough sketch):
+   - `sdk_method_exists(repo, manager_class, method_name) -> bool`
+   - `sdk_call_path(endpoint_url) -> list[SDKMethod | "missing"]`
+
+**Cross-link to P3.** P3 should be amended: "verify the FULL call
+chain, not just the server endpoint." The original P3 wording
+("verify endpoint names against actual implementation") is too
+narrow — it admits the failure mode this pattern names. P3 stays
+as the higher-level discipline; P12 is the concrete refinement.
 
 ### P11. Architect owns evidential-character decisions, not just topology
 

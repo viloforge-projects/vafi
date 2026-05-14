@@ -15,7 +15,8 @@ intent: |
   `POST /v2/tasks/<id>/unclaim/` endpoint; no vtaskforge changes
   needed. Closes vafi#4.
 target_repos:
-  - viloforge/vafi
+  - vtaskforge          # T0 only — SDK method additions
+  - viloforge/vafi      # T1, T2, T3
 parent_observations:
   - obs_jsWWsQ
 related_workgraphs: []
@@ -35,19 +36,38 @@ tags:
 
 ```mermaid
 flowchart LR
-    T1["01-impl-sigterm-graceful-release<br/><i>executor</i>"]
-    T2["02-impl-startup-reconciliation<br/><i>executor</i>"]
-    T3["03-integration-test-rolling-restart<br/><i>executor</i>"]
+    T0["00-add-sdk-methods<br/><i>executor</i><br/>(vtaskforge)"]
+    T1["01-impl-sigterm-graceful-release<br/><i>executor</i><br/>(vafi)"]
+    T2["02-impl-startup-reconciliation<br/><i>executor</i><br/>(vafi)"]
+    T3["03-integration-test-rolling-restart<br/><i>executor</i><br/>(vafi)"]
 
+    T0 --> T1
+    T0 --> T2
     T1 --> T3
     T2 --> T3
 ```
 
-T1 and T2 are independent (different code paths, different lifecycle
-hooks in the same controller). T3 depends on both because the
-integration test exercises the combined fix: SIGTERM cleanup handles
-the common case; startup reconciliation backstops the SIGTERM-failed
-case (OOM kill, node loss, prior-version pod).
+T0 adds three missing SDK methods to vtf-sdk-python that the async
+client doesn't expose today (`AsyncTaskManager.unclaim`,
+`AgentManager.tasks`, `AsyncAgentManager.tasks` — mirroring already-
+existing endpoints in vtaskforge). T1 and T2 each consume one of
+these methods, so both depend on T0. T1 and T2 are independent of
+each other (different code paths, different lifecycle hooks in the
+same controller). T3 depends on T1 + T2 because the integration test
+exercises the combined fix: SIGTERM cleanup handles the common case;
+startup reconciliation backstops the SIGTERM-failed case (OOM kill,
+node loss, prior-version pod).
+
+**On the cross-repo scope.** T0's `target_repo: vtaskforge` was added
+during spec-author phase, not architect phase. The architect-phase
+investigation (P3 in `architect-retro.md`) verified that the
+*endpoints* existed in vtaskforge but did not verify that the
+*async SDK* exposed them — only the sync SDK does. The walk-back is
+captured in architect-retro `P12` and the "Phase 1 single-repo"
+footnote there. Adding T0 to the DAG is the honest representation
+of the work needed; trying to preserve a strict single-repo framing
+would have hidden the multi-repo coordination inside spec bodies,
+which architect-retro X3 warns against.
 
 # Why this DAG
 
@@ -92,8 +112,12 @@ methodology argument.
   deployment-shape-specific. Real-cluster smoke under ArgoCD
   rolling is explicitly out of scope (different evidential target,
   separate workgraph if/when wanted).
-- **AC-5.** The fix MUST NOT introduce a new vtaskforge endpoint or
-  modify any vtaskforge-side code. (Phase 1 single-repo constraint.)
+- **AC-5.** The fix MUST NOT introduce a new vtaskforge **server-side**
+  endpoint or modify any vtaskforge model/view code. The SDK-method
+  additions in T0 (within `vtaskforge/vtf-sdk-python/`) are
+  permitted — they expose endpoints that already exist server-side.
+  (Phase 1 "single-repo" constraint walked back to "single-server-
+  side-repo" — see architect-retro.md P12 footnote.)
 - **AC-6.** vafi#4 closed with a verification comment linking to the
   merged PR and the T3 integration-test run output.
 
