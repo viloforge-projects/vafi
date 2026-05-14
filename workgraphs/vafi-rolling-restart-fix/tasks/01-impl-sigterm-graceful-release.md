@@ -11,6 +11,9 @@ depends_on:
 target_repo: viloforge/vafi
 agent_model: claude-opus-4-7
 judge: true
+test_command:
+  command: |
+    git ls-remote --heads origin wg-vafi-rolling-restart/t1-sigterm-unclaim 2>&1 | grep -q .
 created_at: 2026-05-14T00:00:00Z
 acceptance_criteria:
   - AC-T1-1 — Controller SHALL track the ID of any successfully-claimed
@@ -65,9 +68,27 @@ acceptance_criteria:
     outer k8s `terminationGracePeriodSeconds` is the binding ceiling,
     and stacking an inner timeout adds failure modes without
     materially improving worst-case outcomes.
+  - AC-T1-8 — **Externally-grounded (required per
+    `vtf-methodologies/spec-author/bugfix.md` R1):** branch
+    `wg-vafi-rolling-restart/t1-sigterm-unclaim` is pushed to
+    `origin` on the `viloforge/vafi` repo, AND a PR exists at
+    `https://github.com/viloforge/vafi/pulls?head=wg-vafi-rolling-restart/t1-sigterm-unclaim`
+    proposing the controller changes + WorkSource protocol
+    addition + VtfWorkSource impl + tests + (if T1 lands first
+    per AC-T0-6) the `pyproject.toml` SDK pin-bump.
 ---
 
 # Spec
+
+> **Fail-loud directive (required per
+> `vtf-methodologies/executor/bugfix.md` R1).** If any required
+> step (push to `viloforge/vafi`, PR creation, unit-test pass)
+> cannot be completed due to missing credentials, missing tools,
+> or blocked external dependencies: **report the failure
+> explicitly** in your completion notes. Do NOT rationalize
+> partial completion as success. If you cannot open the PR via
+> available tools, state this in notes with the local commit SHA
+> and a `pull/new/<branch>` URL.
 
 ## Files touched
 

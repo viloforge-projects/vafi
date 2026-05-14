@@ -10,6 +10,9 @@ depends_on: []
 target_repo: vtaskforge
 agent_model: claude-opus-4-7
 judge: true
+test_command:
+  command: |
+    git ls-remote --heads origin wg-vafi-rolling-restart/t0-sdk-methods 2>&1 | grep -q .
 created_at: 2026-05-14T00:00:00Z
 acceptance_criteria:
   - AC-T0-1 — `AsyncTaskManager.unclaim(id: str) -> Task` is added to
@@ -61,9 +64,34 @@ acceptance_criteria:
     and links the GitHub issue (`viloforge/vafi#4`) so a future
     reader can trace this SDK alignment back to the workgraph
     that required it.
+  - AC-T0-8 — **Externally-grounded (required per
+    `vtf-methodologies/spec-author/bugfix.md` R1):** branch
+    `wg-vafi-rolling-restart/t0-sdk-methods` is pushed to
+    `origin` on the `viloforge/vtaskforge` repo, AND a PR exists
+    at `https://github.com/viloforge/vtaskforge/pulls?head=wg-vafi-rolling-restart/t0-sdk-methods`
+    proposing the three SDK-method additions into `main`.
+    Verifiable by `git ls-remote --heads origin
+    wg-vafi-rolling-restart/t0-sdk-methods` and by visiting the
+    GitHub PR page.
 ---
 
 # Spec
+
+> **Fail-loud directive (required per
+> `vtf-methodologies/executor/bugfix.md` R1).** If any required
+> step (push to `viloforge/vtaskforge`, PR creation, tests passing)
+> cannot be completed due to missing credentials, missing tools,
+> or blocked external dependencies: **report the failure
+> explicitly** in your completion notes. Do NOT rationalize partial
+> completion as success. The judge will fail tasks that report
+> dishonest success; tasks that report failure honestly can be
+> reworked once the gap is addressed.
+>
+> Specifically: if you cannot push the branch or open the PR via
+> available tools (`gh` CLI may not be installed; `GITHUB_TOKEN`
+> may not be in env), state this in notes with the workdir's
+> local commit SHA and a `pull/new/<branch>` URL so the operator
+> can complete the PR step manually.
 
 ## Files touched
 

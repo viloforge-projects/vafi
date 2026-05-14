@@ -11,6 +11,9 @@ depends_on:
 target_repo: viloforge/vafi
 agent_model: claude-opus-4-7
 judge: true
+test_command:
+  command: |
+    git ls-remote --heads origin wg-vafi-rolling-restart/t2-startup-reconciliation 2>&1 | grep -q .
 created_at: 2026-05-14T00:00:00Z
 acceptance_criteria:
   - AC-T2-1 — After agent registration and after the agent-heartbeat
@@ -76,9 +79,28 @@ acceptance_criteria:
     would release claims still being worked on by sibling
     replicas." (See workgraph.md "Out of scope" + runtime DESIGN
     safety constraint.)
+  - AC-T2-10 — **Externally-grounded (required per
+    `vtf-methodologies/spec-author/bugfix.md` R1):** branch
+    `wg-vafi-rolling-restart/t2-startup-reconciliation` is pushed
+    to `origin` on the `viloforge/vafi` repo, AND a PR exists at
+    `https://github.com/viloforge/vafi/pulls?head=wg-vafi-rolling-restart/t2-startup-reconciliation`
+    proposing the `_reconcile_orphaned_claims` method +
+    `WorkSource.list_active_claims` protocol addition +
+    `VtfWorkSource` impl + tests + (if T2 lands before T1 per
+    AC-T0-6) the `pyproject.toml` SDK pin-bump.
 ---
 
 # Spec
+
+> **Fail-loud directive (required per
+> `vtf-methodologies/executor/bugfix.md` R1).** If any required
+> step (push to `viloforge/vafi`, PR creation, unit-test pass)
+> cannot be completed due to missing credentials, missing tools,
+> or blocked external dependencies: **report the failure
+> explicitly** in your completion notes. Do NOT rationalize
+> partial completion as success. If you cannot open the PR via
+> available tools, state this in notes with the local commit SHA
+> and a `pull/new/<branch>` URL.
 
 ## Files touched
 
