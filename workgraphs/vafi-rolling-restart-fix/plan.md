@@ -36,17 +36,32 @@ cleanest place to expose this as a release-time-readable attribute.
    backstop).
 4. Proceed into the claim loop normally.
 
-**T3 — Integration test.** Test fixture in vafi repo. Pseudocode:
+**T3 — Integration test.** Test fixture in vafi repo, run on an
+**ephemeral kind or k3d cluster spun up in CI** (not against the
+vafi-dev cluster). Rationale: the orphan-recovery behavior under
+test is controller-lifecycle (SIGTERM delivery, registration,
+claim, hard-kill+restart). All of that exercises identically in an
+ephemeral local cluster as in a real cluster; ArgoCD/real-cluster-
+specific behavior is not what vafi#4 targets. Running in CI on
+every PR catches regressions immediately.
 
-1. Deploy `executor-pi` to a test namespace; wait for ready.
-2. Submit a task that intentionally blocks (e.g., a long-running
+Pseudocode:
+
+1. CI spins up kind (or k3d) cluster + deploys vtaskforge + builds
+   and loads the controller image under test.
+2. Deploy `executor-pi` with `terminationGracePeriodSeconds=30`
+   to the test namespace; wait for ready.
+3. Submit a task that intentionally blocks (e.g., a long-running
    sleep harness invocation, or a test-mode flag that holds the
    claim for N seconds).
-3. Wait for the executor to claim it (`doing`).
-4. `kubectl rollout restart deployment/executor-pi -n <ns>`.
-5. Wait `terminationGracePeriodSeconds + 30s`.
-6. Assert: task is back in `todo` (or claimed by the new pod);
+4. Wait for the executor to claim it (`doing`).
+5. `kubectl rollout restart deployment/executor-pi -n <ns>`.
+6. Wait `terminationGracePeriodSeconds + 30s`.
+7. Assert: task is back in `todo` (or claimed by the new pod);
    no task is stranded in `doing` claimed by a non-existent pod.
+8. Second scenario in same fixture: simulate hard kill
+   (`kubectl delete pod --grace-period=0 ...`) → verifies the T2
+   startup-reconciliation path independently of SIGTERM delivery.
 
 # Considered alternatives
 

@@ -384,6 +384,61 @@ empty.
 the primary input for `vtf-methodologies/architect/<kind>.md`
 synthesis across N workgraphs.
 
+### P11. Architect owns evidential-character decisions, not just topology
+
+**Maturity:** HIGH — surfaced by post-session operator question on
+the architect/spec-author phase boundary.
+
+**Observed.** When listing remaining open decisions for spec-author,
+T3.1 (test environment: vafi-dev real cluster vs ephemeral kind/k3d
+in CI) was listed as a spec-author decision. Operator flagged that
+this was mis-categorized. Reason: the test-environment choice
+changes what we *conclude* from a passing test (controller-lifecycle
+correctness vs deployment-shape-under-ArgoCD correctness) — that's
+the *evidential character* of the validation, which is the
+architect's call. Plan.md even had a giveaway line ("Spec-author
+phase resolves: which test environment") that should not have
+existed. Resolved post-session: locked to ephemeral kind/k3d in CI
+(orphan-recovery is controller-lifecycle, not deployment-shape).
+Workgraph.md AC-4 + plan.md T3 + task 03 placeholder all updated.
+
+**Candidate rule.** For any task in the DAG that involves
+validation (tests, audits, measurements, benchmarks), the architect
+must decide the validation's *evidential character* — what kind of
+evidence is acceptable, against what environment, with what
+boundary conditions — before handing off to spec-author. Spec-author
+implements the test; architect specifies what passing the test
+*proves*.
+
+**Distinguishing rule.** If changing the answer changes what we
+*conclude* from passing the test, it's architect. If it only
+changes how we *build* the test, it's spec-author.
+
+Examples:
+
+- "kind/k3d vs vafi-dev cluster" → architect (different evidence)
+- "kind vs k3d" → spec-author (same evidence; pick whichever is
+  standardized)
+- "poll-and-timeout vs event-stream assertion" → spec-author
+  (same evidence)
+- "unit-test only vs integration test" → architect (different
+  evidence)
+- "test environment variables to inject" → spec-author
+- "what passing the test allows us to ship to production" →
+  architect
+
+**Why the line matters.** Spec-author has neither the cross-doc
+visibility nor the scope-constraint visibility the architect has.
+Asking spec-author to make evidential-character calls means asking
+the wrong stage to weigh against e.g. Phase 1 single-repo
+constraints, future-workgraph dependencies, or roadmap timelines.
+
+**For the autonomous architect agent variant.** The agent's
+checklist before emitting task placeholders must include "for
+each validation-related task, is the evidential character
+specified?" An unspecified evidential character is a defect that
+verifier should also catch.
+
 ### P10. Use real IDs in task placeholders even when bodies are TBD
 
 **Maturity:** HIGH

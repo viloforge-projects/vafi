@@ -85,7 +85,13 @@ methodology argument.
 - **AC-4.** An induced rolling restart of the executor Deployment
   (with at least one task in `doing` at restart time) MUST leave
   zero tasks stranded in `doing` claimed by the dying pod's agent
-  ID. Verified by integration test (T3).
+  ID. Verified by an **ephemeral-cluster (kind or k3d) integration
+  test running in CI on every PR** — chosen over a vafi-dev real-
+  cluster test because the orphan-recovery behavior under test is
+  controller-lifecycle (SIGTERM, registration, claim, restart), not
+  deployment-shape-specific. Real-cluster smoke under ArgoCD
+  rolling is explicitly out of scope (different evidential target,
+  separate workgraph if/when wanted).
 - **AC-5.** The fix MUST NOT introduce a new vtaskforge endpoint or
   modify any vtaskforge-side code. (Phase 1 single-repo constraint.)
 - **AC-6.** vafi#4 closed with a verification comment linking to the
