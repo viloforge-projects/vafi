@@ -161,6 +161,25 @@ the session*.
   plan.md gained a cross-repo walk-back section; AC-5 reframed from
   "no vtaskforge changes" to "no vtaskforge **server-side** changes."
 
+- **W4 — Architect locked "CI on every PR" without verifying CI exists**
+  (date: 2026-05-14, post-session, during spec-author T3 prep).
+  Architect's W1 resolution locked T3 to "ephemeral kind/k3d in CI
+  on every PR." Spec-author T3 verification of the existing
+  `tests/integration/` pattern found that vafi has no
+  `.github/workflows/` directory — there is no GitHub Actions CI
+  in the repo. Existing integration tests
+  (`test_session_continuity.py`) follow a manual-run-against-vafi-dev
+  pattern with the `@pytest.mark.integration` marker.
+  Walked back: T3 delivers the test + a `make integration-test-rolling-restart`
+  target that spins up local kind, runs the test, tears down. The
+  test logic is environment-agnostic so a future CI workflow will
+  invoke it without test-code changes. CI wiring deferred to a
+  follow-up `kind: infrastructure` workgraph (Q6). Architect-level
+  evidential intent (ephemeral cluster, controller-lifecycle
+  evidence) is preserved literally; only the "on every PR"
+  automation is deferred. Workgraph.md AC-4 + plan.md §T3 + task
+  03 spec updated. Methodology finding: **P13**.
+
 - **W3 — Stage-retros are extraction scaffolding, not standing SDD**
   (date: 2026-05-14, post-session). Operator-flagged correction
   to X5. The retro originally framed per-stage retros as a permanent
@@ -433,6 +452,72 @@ empty.
 **For methodology synthesis.** These three subsections become
 the primary input for `vtf-methodologies/architect/<kind>.md`
 synthesis across N workgraphs.
+
+### P13. Verify the test-delivery mechanism, not just the test environment
+
+**Maturity:** HIGH — directly caused the W4 walk-back; sibling
+pattern to P12 (full call chain) for the validation axis.
+
+**Observed.** Under P11 ("Architect owns evidential-character
+decisions"), the architect locked T3's evidential character as
+"ephemeral kind/k3d in CI on every PR." Two claims were embedded
+in that one decision:
+
+1. *Test environment* — ephemeral kind/k3d (correct; the tooling
+   exists; kind is a well-known utility).
+2. *Test delivery* — "in CI on every PR" (NOT verified; vafi has
+   no `.github/workflows/` directory; no CI to run anything on
+   any PR).
+
+The architect verified (1) but assumed (2). Spec-author phase
+caught the second when grounding T3 against the existing
+`tests/integration/` pattern.
+
+**Candidate rule.** For any test-related task, the architect MUST
+separately verify:
+
+1. **The test runtime** — the environment/tooling the test runs
+   IN (kind cluster, browser harness, simulator, database fixture).
+   This is what P11 names.
+2. **The test delivery mechanism** — what causes the test to RUN
+   when the architect says it should (CI pipeline, pre-commit
+   hook, scheduled job, operator runbook, deployment gate).
+
+When (1) exists but (2) doesn't, the workgraph has three honest
+options:
+
+- **(a) Expand scope** to include building the delivery mechanism
+  (add an `infrastructure`-tier task or sibling workgraph).
+- **(b) Walk back** the delivery-mechanism part of the evidential
+  claim ("manual run via Makefile target today; future workgraph
+  wires CI").
+- **(c) Reject the workgraph** if neither (a) nor (b) is
+  acceptable.
+
+What the architect MUST NOT do: silently inherit a delivery
+mechanism from the local culture or roadmap text without
+verifying it exists.
+
+**Cross-link to P11.** P11 named "evidential character" as
+architect-scope. P13 splits the evidential-character verification
+into *runtime* (P11's focus) and *delivery* (P13's focus). Both
+must be verified before the workgraph is `ready`.
+
+**Cross-link to P12.** Same shape as P12 (full call chain): both
+patterns are about the architect verifying the *full path* from
+declared intent to actual execution, not just the most-visible
+piece. P12 = full code call chain; P13 = full test execution
+chain.
+
+**For the autonomous architect agent variant.** Its checklist
+before emitting a workgraph with any validation-related task
+must include:
+
+- "Is the test environment specified AND verified-to-exist?"
+- "Is the test delivery mechanism specified AND verified-to-exist?"
+
+If either is "specified but not verified," the agent surfaces
+the gap to the operator before locking.
 
 ### P12. Verify the FULL call chain from agent code to server, not just the server endpoint
 
@@ -777,6 +862,13 @@ deliberately exercise:
 - **Q5.** Where does drift-findings output (X3) live structurally
   in the SDD pipeline? The current `project-repo-DESIGN.md`
   doesn't have a place for it. Worth a follow-up decision.
+- **Q6.** Spawn a `kind: infrastructure` follow-up workgraph to
+  wire `make integration-test-rolling-restart` into GitHub Actions
+  CI for vafi? This is the W4 walk-back's deferred work. It's
+  also the roadmap-asked-for Phase-1 `infrastructure`-tier
+  methodology variant (per `implementation-roadmap-PLAN.md`
+  §"Run 2-3 more workgraphs after vafi#4"). Strong candidate to
+  schedule directly after vafi#4 closes.
 
 ## References
 

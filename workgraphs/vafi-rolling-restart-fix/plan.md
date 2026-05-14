@@ -71,31 +71,48 @@ cleanest place to expose this as a release-time-readable attribute.
 4. Proceed into the claim loop normally.
 
 **T3 — Integration test.** Test fixture in vafi repo, run on an
-**ephemeral kind or k3d cluster spun up in CI** (not against the
-vafi-dev cluster). Rationale: the orphan-recovery behavior under
-test is controller-lifecycle (SIGTERM delivery, registration,
-claim, hard-kill+restart). All of that exercises identically in an
+**ephemeral local kind cluster** spun up by a Makefile target
+(`make integration-test-rolling-restart`). The test logic is
+environment-agnostic — it operates against whatever cluster
+`KUBECONFIG` points at — so the same test will later run
+unchanged in CI when the follow-up `kind: infrastructure`
+workgraph wires it up (W4 walk-back; see Q6).
+
+Rationale: the orphan-recovery behavior under test is
+controller-lifecycle (SIGTERM delivery, registration, claim,
+hard-kill+restart). All of that exercises identically in an
 ephemeral local cluster as in a real cluster; ArgoCD/real-cluster-
-specific behavior is not what vafi#4 targets. Running in CI on
-every PR catches regressions immediately.
+specific behavior is not what vafi#4 targets.
 
-Pseudocode:
+Pseudocode (driven by the Makefile target):
 
-1. CI spins up kind (or k3d) cluster + deploys vtaskforge + builds
-   and loads the controller image under test.
-2. Deploy `executor-pi` with `terminationGracePeriodSeconds=30`
-   to the test namespace; wait for ready.
-3. Submit a task that intentionally blocks (e.g., a long-running
-   sleep harness invocation, or a test-mode flag that holds the
-   claim for N seconds).
-4. Wait for the executor to claim it (`doing`).
-5. `kubectl rollout restart deployment/executor-pi -n <ns>`.
-6. Wait `terminationGracePeriodSeconds + 30s`.
-7. Assert: task is back in `todo` (or claimed by the new pod);
-   no task is stranded in `doing` claimed by a non-existent pod.
-8. Second scenario in same fixture: simulate hard kill
-   (`kubectl delete pod --grace-period=0 ...`) → verifies the T2
-   startup-reconciliation path independently of SIGTERM delivery.
+1. `make integration-test-rolling-restart` invokes a shell script
+   that:
+   a. Verifies `kind` is installed (fails fast with install hint
+      otherwise).
+   b. `kind create cluster --name vafi-int` (or reuses an existing
+      one if KEEP_CLUSTER=1).
+   c. Loads the just-built controller image into the kind cluster
+      via `kind load docker-image`.
+   d. Deploys minimal vtaskforge + vafi chart subset to the kind
+      cluster.
+   e. Runs `pytest tests/integration/test_rolling_restart.py -m integration`.
+   f. Tears down kind cluster (unless KEEP_CLUSTER=1).
+2. The pytest test itself:
+   - Submits a task that holds the claim for N seconds via a
+     test-only env flag (`VF_TEST_HOLD_CLAIM_SECONDS`) recognized
+     by the harness invoker.
+   - Waits for the executor pod to claim it (`doing`).
+   - **Scenario A (T1 path):**
+     `kubectl rollout restart deployment/executor-pi`. Wait
+     `terminationGracePeriodSeconds + 30s`. Poll
+     `GET /v2/tasks/<id>/` until `status == "todo"` (or timeout).
+   - **Scenario B (T2 path):**
+     `kubectl delete pod <name> --grace-period=0`. New pod starts.
+     Poll until `status == "todo"` (recovered by startup
+     reconciliation, not SIGTERM).
+3. Test asserts both scenarios complete within their respective
+   timeouts.
 
 # Considered alternatives
 
