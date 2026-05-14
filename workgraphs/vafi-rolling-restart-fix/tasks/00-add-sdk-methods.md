@@ -47,12 +47,15 @@ acceptance_criteria:
     in the async SDK surface.)
   - AC-T0-6 — vafi's `pyproject.toml` is updated to pin
     `vtf-sdk-python` to the merge-commit hash of this PR. The
-    pin-bump is committed in the **vafi repo as part of T1's PR**
-    (since T1 is the first vafi-side task that requires the new
-    SDK surface), NOT in a separate vafi commit attached to T0.
-    Rationale: T0's deliverable is "vtaskforge merge commit
-    exists"; the vafi-side consumption of that commit is T1's
-    business.
+    pin-bump is committed in the **vafi repo as part of whichever
+    T1/T2 PR lands first** (both are T0-dependent and can be
+    implemented in either order). If T1 lands first, T1's PR
+    includes the pin-bump; if T2 lands first, T2's PR includes
+    it; the second PR inherits the pin and adds no further
+    pin-bump. NOT a separate vafi commit attached to T0
+    standalone. Rationale: T0's deliverable is "vtaskforge merge
+    commit exists"; the vafi-side consumption of that commit is
+    T1's or T2's business depending on execution order.
   - AC-T0-7 — The vtaskforge PR commit message clearly states the
     workgraph + task IDs (`vafi-rolling-restart-fix / t_cHx0UU`)
     and links the GitHub issue (`viloforge/vafi#4`) so a future

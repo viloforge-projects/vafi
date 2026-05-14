@@ -278,32 +278,28 @@ implemented in T2 — adding it is out of scope.
 Add to the mock's state and method surface (match the existing
 attribute-init pattern):
 
-```python
-# In MockWorkSource.__init__ or class attrs:
-self.list_active_claims_response: list[TaskInfo] = []
-self.list_active_claims_error: Exception | None = None
-self.unclaim_errors: dict[str, Exception] = {}  # task_id -> exception to raise
-
-# New method:
-async def list_active_claims(self, agent_id: str) -> list[TaskInfo]:
-    self.list_active_claims_calls.append(agent_id)
-    if self.list_active_claims_error is not None:
-        raise self.list_active_claims_error
-    return self.list_active_claims_response
-```
-
-And extend the existing T1 mock `unclaim` to honor `unclaim_errors`:
+The existing `MockWorkSource` uses `unittest.mock.AsyncMock()` for
+every protocol method (see T1's mock-section discussion for the
+full idiom). The T1 PR added `self.unclaim = AsyncMock()` and an
+`attach_mock` recorder for ordering. T2 extends this with:
 
 ```python
-async def unclaim(self, task_id: str) -> None:
-    self.unclaim_calls.append(task_id)
-    if task_id in self.unclaim_errors:
-        raise self.unclaim_errors[task_id]
+# In MockWorkSource.__init__, alongside existing AsyncMock attrs:
+self.list_active_claims = AsyncMock()
+# Optionally attach to T1's _call_recorder if cross-method ordering
+# matters for any T2 test (not needed for the three T2 tests below):
+self._call_recorder.attach_mock(self.list_active_claims, "list_active_claims")
 ```
 
-Initialize the new tracking lists (`list_active_claims_calls`)
-in the mock's `__init__` alongside the existing call-tracking
-lists.
+That's the entire mock surface change. All test arrangements use
+the standard AsyncMock idioms:
+
+- `mock.method.return_value = X` — what the mock returns.
+- `mock.method.side_effect = exc | seq | callable` — raise an
+  exception, return a sequence, or run a callable.
+- `mock.method.await_count` — how many times it was awaited.
+- `mock.method.await_args_list` — ordered list of `mock.call(...)`.
+- `mock.method.assert_awaited_once_with(arg)` — single-call check.
 
 ### New tests in `TestController`
 
@@ -314,28 +310,29 @@ async def test_reconciles_orphaned_claims_on_startup(
     self, mock_work_source, test_config, sample_agent
 ):
     """Startup reconciliation releases all orphaned claims (vafi#4 T2)."""
-    mock_work_source.register_response = sample_agent
-    mock_work_source.list_active_claims_response = [
+    mock_work_source.register.return_value = sample_agent
+    orphans = [
         TaskInfo(id="task-alpha", title="Alpha", ...),
         TaskInfo(id="task-beta", title="Beta", ...),
         TaskInfo(id="task-gamma", title="Gamma", ...),
     ]
+    mock_work_source.list_active_claims.return_value = orphans
     # No poll work — controller proceeds idle after reconciliation.
-    mock_work_source.poll_response = None
+    mock_work_source.poll.return_value = None
 
     controller = Controller(mock_work_source, test_config)
     run_task = asyncio.create_task(controller.run())
     await _wait_until(
-        lambda: len(mock_work_source.unclaim_calls) == 3, timeout=2.0
+        lambda: mock_work_source.unclaim.await_count == 3, timeout=2.0
     )
     controller._shutdown.set()
     await asyncio.wait_for(run_task, timeout=5.0)
 
-    assert mock_work_source.unclaim_calls == [
-        "task-alpha", "task-beta", "task-gamma"
-    ]
-    # list_active_claims called exactly once (startup only):
-    assert len(mock_work_source.list_active_claims_calls) == 1
+    # Each orphan was unclaimed in order.
+    awaited_ids = [call.args[0] for call in mock_work_source.unclaim.await_args_list]
+    assert awaited_ids == ["task-alpha", "task-beta", "task-gamma"]
+    # list_active_claims called exactly once (startup only).
+    mock_work_source.list_active_claims.assert_awaited_once()
 ```
 
 **Test 2 — per-task unclaim error isolation (AC-T2-7):**
@@ -345,28 +342,28 @@ async def test_reconciliation_continues_on_per_task_unclaim_error(
     self, mock_work_source, test_config, sample_agent, caplog
 ):
     """A failed unclaim on one task doesn't block sibling unclaims."""
-    mock_work_source.register_response = sample_agent
-    mock_work_source.list_active_claims_response = [
+    mock_work_source.register.return_value = sample_agent
+    mock_work_source.list_active_claims.return_value = [
         TaskInfo(id="task-alpha", ...),
         TaskInfo(id="task-beta", ...),
         TaskInfo(id="task-gamma", ...),
     ]
-    mock_work_source.unclaim_errors = {"task-beta": RuntimeError("boom")}
-    mock_work_source.poll_response = None
+    # AsyncMock side_effect as a list: nth element used for nth call.
+    mock_work_source.unclaim.side_effect = [None, RuntimeError("boom"), None]
+    mock_work_source.poll.return_value = None
 
     controller = Controller(mock_work_source, test_config)
     run_task = asyncio.create_task(controller.run())
     await _wait_until(
-        lambda: len(mock_work_source.unclaim_calls) == 3, timeout=2.0
+        lambda: mock_work_source.unclaim.await_count == 3, timeout=2.0
     )
     controller._shutdown.set()
     await asyncio.wait_for(run_task, timeout=5.0)
 
-    # All three were attempted, in order:
-    assert mock_work_source.unclaim_calls == [
-        "task-alpha", "task-beta", "task-gamma"
-    ]
-    # Error was logged at ERROR:
+    # All three were attempted, in order.
+    awaited_ids = [call.args[0] for call in mock_work_source.unclaim.await_args_list]
+    assert awaited_ids == ["task-alpha", "task-beta", "task-gamma"]
+    # Error was logged at ERROR for the failing task.
     assert any(
         rec.levelname == "ERROR" and "task-beta" in rec.message
         for rec in caplog.records
@@ -380,33 +377,32 @@ async def test_reconciliation_survives_list_failure(
     self, mock_work_source, test_config, sample_agent, caplog
 ):
     """If list_active_claims raises, controller still proceeds to poll loop."""
-    mock_work_source.register_response = sample_agent
-    mock_work_source.list_active_claims_error = RuntimeError("server unreachable")
-    mock_work_source.poll_response = None
+    mock_work_source.register.return_value = sample_agent
+    mock_work_source.list_active_claims.side_effect = RuntimeError("server unreachable")
+    mock_work_source.poll.return_value = None
 
     controller = Controller(mock_work_source, test_config)
     run_task = asyncio.create_task(controller.run())
-    # Wait a bit for the poll loop to run at least once
+    # Let the poll loop tick at least once.
     await asyncio.sleep(0.1)
     controller._shutdown.set()
     await asyncio.wait_for(run_task, timeout=5.0)
 
-    # No unclaim calls (list failed before iteration):
-    assert mock_work_source.unclaim_calls == []
-    # Error was logged at ERROR:
+    # No unclaim calls (list failed before iteration).
+    mock_work_source.unclaim.assert_not_awaited()
+    # Error was logged at ERROR.
     assert any(
         rec.levelname == "ERROR" and "list active claims" in rec.message.lower()
         for rec in caplog.records
     )
-    # Controller proceeded to poll (poll mock was queried):
-    assert len(mock_work_source.poll_calls) >= 1
+    # Controller proceeded to poll.
+    assert mock_work_source.poll.await_count >= 1
 ```
 
-The `_wait_until` helper, `sample_agent` fixture, and existing
-mock-tracking attributes (`poll_calls`, `register_response`) are
-already conventions in `test_controller.py` — the spec defers to
-the executor to match the exact local conventions for fixture
-wiring.
+The `_wait_until` helper and `sample_agent` fixture are existing
+conventions in `test_controller.py` — match them. All mock state
+is set via standard AsyncMock APIs; no custom list-tracking
+attributes needed.
 
 # Constraints
 

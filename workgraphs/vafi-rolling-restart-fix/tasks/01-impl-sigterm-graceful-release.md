@@ -33,10 +33,12 @@ acceptance_criteria:
     `claim` in the protocol surface. The `VtfWorkSource` implementation
     calls `await self._client.tasks.unclaim(task_id)`. This relies on
     T0 (`t_cHx0UU`) having merged the `AsyncTaskManager.unclaim` method
-    into `vtf-sdk-python`; T1's PR includes the `pyproject.toml`
-    pin-bump to the T0 merge commit (per T0 AC-T0-6). No other
-    `WorkSource` implementations exist in-tree today; if any are added
-    in future they must implement this method.
+    into `vtf-sdk-python`. The `pyproject.toml` pin-bump to T0's merge
+    commit MUST be present in this PR if T1 is the first T0-dependent
+    PR to vafi; otherwise (T2 landed first) T1's PR may inherit the
+    existing pin (per T0 AC-T0-6). No other `WorkSource`
+    implementations exist in-tree today; if any are added in future
+    they must implement this method.
   - AC-T1-5 — A `pytest-asyncio` unit test in
     `tests/test_controller.py` SHALL verify that setting
     `controller._shutdown` after a successful claim (but before the
@@ -218,18 +220,41 @@ HTTP call. Avoid duplicate noise.
 
 ## test_controller.py changes
 
-Add a method to the existing `MockWorkSource` class
-(`tests/test_controller.py:15`):
+The existing `MockWorkSource` (`tests/test_controller.py:15-32`)
+uses `unittest.mock.AsyncMock()` for every protocol method — NOT
+manual `xxx_calls` list tracking. New protocol methods plug into
+this idiom directly: `self.unclaim = AsyncMock()` in the mock's
+`__init__`, alongside the existing `self.claim = AsyncMock()` etc.
+No custom call-tracking attributes are needed; AsyncMock provides
+`.await_args_list`, `.call_count`, `.assert_awaited_once_with(...)`
+out of the box.
+
+Update to `MockWorkSource.__init__`:
 
 ```python
-async def unclaim(self, task_id: str) -> None:
-    """Record the unclaim call for inspection by tests."""
-    self.unclaim_calls.append(task_id)
+# Add alongside existing AsyncMock initialisations:
+self.unclaim = AsyncMock()
 ```
 
-And initialize `self.unclaim_calls: list[str] = []` in its
-`__init__` (or wherever the mock's other call-tracking attrs are
-initialized — match the existing pattern).
+That's it. No method body, no separate state.
+
+For ordering assertions across multiple AsyncMock methods, use a
+shared `mock.Mock()` parent and `attach_mock`:
+
+```python
+import unittest.mock as _mock
+# In MockWorkSource.__init__, also:
+self._call_recorder = _mock.Mock()
+self._call_recorder.attach_mock(self.unclaim, "unclaim")
+self._call_recorder.attach_mock(self.set_agent_offline, "set_agent_offline")
+# After the test runs, self._call_recorder.method_calls is an
+# ordered list of mock.call objects across the attached methods.
+```
+
+This is the idiomatic stdlib approach — no custom `ops: list[str]`
+needed. The spec-author defers to the executor on whether to
+attach more methods to the recorder; the minimum is `unclaim` +
+`set_agent_offline` to verify the ordering AC.
 
 Add one new test inside `class TestController`, modeled on
 `test_shutdown_signal_handling` (line 257) and
@@ -245,38 +270,41 @@ async def test_unclaims_in_flight_claim_on_shutdown(
     work_source.unclaim() before work_source.set_agent_offline() so
     that the release happens while still authenticated.
     """
-    # Arrange: register succeeds, claim succeeds, execute blocks
-    # indefinitely until we set the shutdown flag.
-    mock_work_source.register_response = sample_agent
-    mock_work_source.poll_response = sample_task
-    mock_work_source.claim_response = sample_task
-    execute_blocker = asyncio.Event()
-    # ... (mock execute hook that awaits execute_blocker)
+    # Arrange: register succeeds, claim succeeds, execute hangs until
+    # the shutdown flag is set.
+    mock_work_source.register.return_value = sample_agent
+    mock_work_source.poll.return_value = sample_task
+    mock_work_source.claim.return_value = sample_task
+    # ... (Controller.execute is patched/mocked so it awaits a shared
+    #      event the test can release after triggering shutdown — match
+    #      whatever existing pattern test_controller.py uses for this,
+    #      e.g. monkeypatching Controller.execute on the instance)
 
     controller = Controller(mock_work_source, test_config)
 
     # Act: start the controller, wait until the claim has happened,
     # then signal shutdown.
     run_task = asyncio.create_task(controller.run())
-    await _wait_until(lambda: mock_work_source.claim_calls, timeout=2.0)
+    await _wait_until(lambda: mock_work_source.claim.await_count > 0, timeout=2.0)
     controller._shutdown.set()
-    execute_blocker.set()  # release the blocked execute path
+    # release the blocked execute path here, in whatever way it was
+    # set up to await:
+    # execute_blocker.set()
     await asyncio.wait_for(run_task, timeout=5.0)
 
-    # Assert: unclaim called exactly once with the right task ID,
-    # and before set_agent_offline.
-    assert mock_work_source.unclaim_calls == [sample_task.id]
-    # Ordering — captured via a single ops log on the mock:
-    assert mock_work_source.ops.index("unclaim") < \
-           mock_work_source.ops.index("set_agent_offline")
+    # Assert: unclaim called exactly once with the claimed task ID.
+    mock_work_source.unclaim.assert_awaited_once_with(sample_task.id)
+    # Ordering — unclaim BEFORE set_agent_offline.
+    method_names = [c[0] for c in mock_work_source._call_recorder.method_calls]
+    assert method_names.index("unclaim") < method_names.index("set_agent_offline")
 ```
 
-Spec-author note: the exact mock-introspection shape (`ops` list,
-`claim_calls`, `_wait_until` helper) is illustrative — match the
-mock's existing conventions. If the existing mock doesn't track
-call ordering across method types, add the minimum needed
-(a single `self.ops: list[str] = []` that each tracked method
-appends to is the lightest-weight pattern).
+Spec-author note: the `_wait_until` helper (if present in
+test_controller.py) and any test-only execute-blocker pattern
+should match whatever conventions are already in the file. The
+intent of this AC is the ordering + the single-correct-task-ID
+unclaim call; the exact wiring is an implementation detail of
+matching the existing test scaffold.
 
 # Constraints
 
